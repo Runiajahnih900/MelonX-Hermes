@@ -572,16 +572,19 @@ class Ryujinx : ObservableObject {
         var effectiveMemoryManagerMode = config.memoryManagerMode
         let hasIncreasedMemoryLimitEntitlement = checkAppEntitlement("com.apple.developer.kernel.increased-memory-limit")
 
-        // Pada beberapa signer/runtime iOS tanpa entitlement memori tambahan,
-        // HostMapped/HostMappedUnsafe sering gagal alokasi (Cannot allocate memory).
-        // Fallback ke SoftwarePageTable agar game tetap bisa boot.
-        if !hasIncreasedMemoryLimitEntitlement,
-           (effectiveMemoryManagerMode == "HostMapped" || effectiveMemoryManagerMode == "HostMappedUnsafe") {
+        // Pada iOS tanpa increased-memory-limit entitlement, mode non-SoftwarePageTable
+        // sangat rentan gagal alokasi memori. Paksa SoftwarePageTable agar game bisa boot.
+        let normalizedMemoryMode = effectiveMemoryManagerMode
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .lowercased()
+
+        if !hasIncreasedMemoryLimitEntitlement, normalizedMemoryMode != "softwarepagetable" {
+            print("[MeloNX] memory-manager-mode forced fallback: \(effectiveMemoryManagerMode) -> SoftwarePageTable (no increased-memory-limit entitlement)")
             effectiveMemoryManagerMode = "SoftwarePageTable"
-            print("[MeloNX] memory-manager-mode fallback: \(config.memoryManagerMode) -> SoftwarePageTable (no increased-memory-limit entitlement)")
         }
 
         args.append(contentsOf: ["--memory-manager-mode", effectiveMemoryManagerMode])
+        print("[MeloNX] final --memory-manager-mode = \(effectiveMemoryManagerMode)")
         
         args.append(contentsOf: ["--exclusive-fullscreen", String(true)])
         if config.aspectRatio == .stretched {
