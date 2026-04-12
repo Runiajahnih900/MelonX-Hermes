@@ -29,6 +29,10 @@ final class RyujinxBridge {
         }
     }
 
+    static func freeDlcList() {
+        SN_free_dlc_nca_list()
+    }
+
     static func installFirmware(at path: String) -> (string: String, isError: Bool) {
         guard let firmware = (path.withCString { SN_install_firmware($0) }) else { return ("Failed to get error.", true) }
         var string = String(cString: firmware)
@@ -173,6 +177,9 @@ func SN_get_game_info(_ arg0: Int32, _ arg1: UnsafeMutablePointer<CChar>!) -> Ga
 
 @_silgen_name("get_dlc_nca_list")
 func SN_get_dlc_nca_list(_ titleIdPtr: UnsafePointer<CChar>!, _ pathPtr: UnsafePointer<CChar>!) -> DlcNcaList
+
+@_silgen_name("free_dlc_nca_list")
+func SN_free_dlc_nca_list()
 
 @_silgen_name("install_firmware")
 func SN_install_firmware(_ inputPtr: UnsafePointer<CChar>!) -> UnsafeMutablePointer<CChar>!

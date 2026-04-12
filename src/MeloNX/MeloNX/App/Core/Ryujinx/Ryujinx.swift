@@ -143,20 +143,29 @@ class Ryujinx : ObservableObject {
             do {
                 let args = self.buildCommandLineArgs(from: config)
                 let accessing = url?.startAccessingSecurityScopedResource()
-                
+                let sessionStart = Date()
+
                 // Start the emulation
                 if isRunning {
                     let result = RyujinxBridge.mainRyu(argv: args)//main_ryujinx_sdl(Int32(args.count), &argvPtrs)
-                    
+
+                    if let accessing, accessing {
+                        url?.stopAccessingSecurityScopedResource()
+                    }
+
                     if result != 0 {
                         Task { @MainActor in
                             self.isRunning = false
                         }
-                        if let accessing, accessing {
-                            url!.stopAccessingSecurityScopedResource()
-                        }
-                        
+
                         throw RyujinxError.executionError(code: Int32(result))
+                    }
+
+                    let sessionDuration = Date().timeIntervalSince(sessionStart)
+                    _ = recordSuccessfulRunAndMaybeRollback(for: config, minimumSessionSeconds: 45, actualSessionSeconds: sessionDuration)
+
+                    Task { @MainActor in
+                        self.isRunning = false
                     }
                 }
             } catch {
@@ -182,17 +191,19 @@ class Ryujinx : ObservableObject {
 
                         self.saveArrayAsTextFile(strings: result, filePath: path)
 
+                        let fallbackInfo = self.getFallbackInfo(for: config)
                         presentAlert(
                             title: "MeloNX Crashed!",
-                            message: "[\(crashCategory)] \(parsedLogs.exceptionType): \(parsedLogs.message)\n\nSuggested fallback profile level: \(fallbackLevel)",
+                            message: "[\(crashCategory)] \(parsedLogs.exceptionType): \(parsedLogs.message)\n\nSuggested fallback profile level: \(fallbackLevel)\nCurrent fallback level: \(fallbackInfo.level)\nStable runs toward rollback: \(fallbackInfo.successfulRuns)/3",
                             imageName: "sad_mac"
                         ) { }
                     }
                 } else {
                     Task { @MainActor in
+                        let fallbackInfo = self.getFallbackInfo(for: config)
                         presentAlert(
                             title: "MeloNX Crashed!",
-                            message: "[\(crashCategory)] Unknown Error\n\nSuggested fallback profile level: \(fallbackLevel)",
+                            message: "[\(crashCategory)] Unknown Error\n\nSuggested fallback profile level: \(fallbackLevel)\nCurrent fallback level: \(fallbackInfo.level)\nStable runs toward rollback: \(fallbackInfo.successfulRuns)/3",
                             imageName: "sad_mac"
                         ) { }
                     }
@@ -264,6 +275,14 @@ class Ryujinx : ObservableObject {
 
     private func fallbackKey(for gameKey: String) -> String {
         "fallback.level.\(gameKey)"
+    }
+
+    private func fallbackSuccessKey(for gameKey: String) -> String {
+        "fallback.successRuns.\(gameKey)"
+    }
+
+    private func fallbackCategoryKey(for gameKey: String) -> String {
+        "fallback.lastCategory.\(gameKey)"
     }
 
     private func normalizeGameKey(from config: Arguments) -> String {
@@ -352,15 +371,61 @@ class Ryujinx : ObservableObject {
     func recordCrashAndSuggestFallback(for config: Arguments, category: String) -> Int {
         let gameKey = normalizeGameKey(from: config)
         let levelKey = fallbackKey(for: gameKey)
-        let categoryKey = "fallback.lastCategory.\(gameKey)"
+        let categoryKey = fallbackCategoryKey(for: gameKey)
+        let successKey = fallbackSuccessKey(for: gameKey)
 
         let current = UserDefaults.standard.integer(forKey: levelKey)
         let next = min(current + 1, 3)
 
         UserDefaults.standard.set(next, forKey: levelKey)
         UserDefaults.standard.set(category, forKey: categoryKey)
+        UserDefaults.standard.set(0, forKey: successKey)
 
         return next
+    }
+
+    func recordSuccessfulRunAndMaybeRollback(for config: Arguments, minimumSessionSeconds: TimeInterval, actualSessionSeconds: TimeInterval) -> Int {
+        let gameKey = normalizeGameKey(from: config)
+        let levelKey = fallbackKey(for: gameKey)
+        let successKey = fallbackSuccessKey(for: gameKey)
+
+        let currentLevel = UserDefaults.standard.integer(forKey: levelKey)
+        guard currentLevel > 0 else {
+            return currentLevel
+        }
+
+        guard actualSessionSeconds >= minimumSessionSeconds else {
+            UserDefaults.standard.set(0, forKey: successKey)
+            return currentLevel
+        }
+
+        let successRuns = UserDefaults.standard.integer(forKey: successKey) + 1
+        UserDefaults.standard.set(successRuns, forKey: successKey)
+
+        if successRuns >= 3 {
+            let nextLevel = max(currentLevel - 1, 0)
+            UserDefaults.standard.set(nextLevel, forKey: levelKey)
+            UserDefaults.standard.set(0, forKey: successKey)
+            return nextLevel
+        }
+
+        return currentLevel
+    }
+
+    func getFallbackInfo(for config: Arguments) -> (level: Int, successfulRuns: Int, lastCategory: String?) {
+        let gameKey = normalizeGameKey(from: config)
+        let level = UserDefaults.standard.integer(forKey: fallbackKey(for: gameKey))
+        let successfulRuns = UserDefaults.standard.integer(forKey: fallbackSuccessKey(for: gameKey))
+        let category = UserDefaults.standard.string(forKey: fallbackCategoryKey(for: gameKey))
+
+        return (level, successfulRuns, category)
+    }
+
+    func clearFallbackInfo(for config: Arguments) {
+        let gameKey = normalizeGameKey(from: config)
+        UserDefaults.standard.removeObject(forKey: fallbackKey(for: gameKey))
+        UserDefaults.standard.removeObject(forKey: fallbackSuccessKey(for: gameKey))
+        UserDefaults.standard.removeObject(forKey: fallbackCategoryKey(for: gameKey))
     }
     
     func extractExceptionInfo(_ logs: [String]) -> ExceptionInfo? {
@@ -698,8 +763,10 @@ class Ryujinx : ObservableObject {
     func getDlcNcaList(titleId: String, path: String) -> [DownloadableContentNca] {
 
         let listPointer = RyujinxBridge.getDlcList(titleId: titleId, path: path)//get_dlc_nca_list(titleIdCString, pathCString)
+        defer { RyujinxBridge.freeDlcList() }
+
         // print("DLC parcing success: \(listPointer.success)")
-        guard listPointer.success else { return [] }
+        guard listPointer.success, listPointer.size > 0, listPointer.items != nil else { return [] }
 
         let list = Array(UnsafeBufferPointer(start: listPointer.items, count: Int(listPointer.size)))
 
