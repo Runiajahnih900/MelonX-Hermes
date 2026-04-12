@@ -163,38 +163,38 @@ class Ryujinx : ObservableObject {
                 Task { @MainActor in
                     self.isRunning = false
                 }
-                
+
                 Thread.sleep(forTimeInterval: 0.3)
                 let logs = LogCapture.shared.capturedLogs
                 let parsedLogs = extractExceptionInfo(logs)
+                let crashCategory = classifyCrash(logs, parsed: parsedLogs)
+                let fallbackLevel = recordCrashAndSuggestFallback(for: config, category: crashCategory)
+
                 if let parsedLogs {
                     Task { @MainActor in
                         let result = Array(logs.suffix(from: parsedLogs.lineIndex))
-                        
+
                         let dateFormatter = DateFormatter()
                         dateFormatter.dateFormat = "yyyy-MM-dd_HH-mm-ss"
                         let currentDate = Date()
                         let dateString = dateFormatter.string(from: currentDate)
                         let path = URL.documentsDirectory.appendingPathComponent("StackTrace").appendingPathComponent("StackTrace-\(dateString).txt").path
-                        
+
                         self.saveArrayAsTextFile(strings: result, filePath: path)
-                        
-                        
-                        presentAlert(title: "MeloNX Crashed!", message: parsedLogs.exceptionType + ": " + parsedLogs.message, imageName: "sad_mac") {
-                            UIApplication.shared.perform(#selector(NSXPCConnection.suspend))
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                exit(0)
-                            }
-                        }
+
+                        presentAlert(
+                            title: "MeloNX Crashed!",
+                            message: "[\(crashCategory)] \(parsedLogs.exceptionType): \(parsedLogs.message)\n\nSuggested fallback profile level: \(fallbackLevel)",
+                            imageName: "sad_mac"
+                        ) { }
                     }
                 } else {
                     Task { @MainActor in
-                        presentAlert(title: "MeloNX Crashed!", message:  "Unknown Error", imageName: "sad_mac") {
-                            UIApplication.shared.perform(#selector(NSXPCConnection.suspend))
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
-                                exit(0)
-                            }
-                        }
+                        presentAlert(
+                            title: "MeloNX Crashed!",
+                            message: "[\(crashCategory)] Unknown Error\n\nSuggested fallback profile level: \(fallbackLevel)",
+                            imageName: "sad_mac"
+                        ) { }
                     }
                 }
             }
@@ -260,6 +260,107 @@ class Ryujinx : ObservableObject {
         let exceptionType: String
         let message: String
         let lineIndex: Int
+    }
+
+    private func fallbackKey(for gameKey: String) -> String {
+        "fallback.level.\(gameKey)"
+    }
+
+    private func normalizeGameKey(from config: Arguments) -> String {
+        if let fileName = URL(string: config.gamepath)?.lastPathComponent, !fileName.isEmpty {
+            return fileName.lowercased()
+        }
+
+        let path = (config.gamepath as NSString).lastPathComponent
+        if !path.isEmpty {
+            return path.lowercased()
+        }
+
+        return "unknown"
+    }
+
+    func configurationWithAutoFallback(base: Arguments, gameKey: String?) -> Arguments {
+        var config = base
+        let normalizedKey = ((gameKey?.isEmpty == false ? gameKey : nil) ?? normalizeGameKey(from: base)).lowercased()
+        let level = UserDefaults.standard.integer(forKey: fallbackKey(for: normalizedKey))
+
+        guard level > 0 else {
+            return config
+        }
+
+        applyFallbackProfile(to: &config, level: level)
+        return config
+    }
+
+    private func applyFallbackProfile(to config: inout Arguments, level: Int) {
+        switch level {
+        case 1:
+            config.enableDockedMode = false
+            config.resscale = min(config.resscale, 1.0)
+            config.maxAnisotropy = min(config.maxAnisotropy, 2.0)
+            config.enableShaderCache = true
+            config.disablePTC = false
+            config.macroHLE = true
+        case 2:
+            config.enableDockedMode = false
+            config.resscale = min(config.resscale, 0.75)
+            config.maxAnisotropy = 0
+            config.enableShaderCache = true
+            config.disablePTC = false
+            config.macroHLE = true
+            config.memoryManagerMode = "HostMapped"
+        default:
+            config.enableDockedMode = false
+            config.resscale = 0.5
+            config.maxAnisotropy = 0
+            config.enableShaderCache = true
+            config.disablePTC = false
+            config.macroHLE = true
+            config.memoryManagerMode = "SoftwarePageTable"
+            config.disablevsync = false
+            config.expandRam = false
+            config.ignoreMissingServices = false
+        }
+    }
+
+    func classifyCrash(_ logs: [String], parsed: ExceptionInfo?) -> String {
+        let recent = logs.suffix(220).joined(separator: "\n").lowercased()
+        let combined = (parsed?.exceptionType.lowercased() ?? "") + "\n" + (parsed?.message.lowercased() ?? "") + "\n" + recent
+
+        if combined.contains("vulkan") || combined.contains("moltenvk") || combined.contains("gpu") || combined.contains("metal") || combined.contains("shader") {
+            return "GPU"
+        }
+        if combined.contains("jit") || combined.contains("arm") || combined.contains("translation") {
+            return "JIT/CPU"
+        }
+        if combined.contains("outofmemory") || combined.contains("memory") || combined.contains("allocation") {
+            return "Memory"
+        }
+        if combined.contains("fs") || combined.contains("nca") || combined.contains("firmware") || combined.contains("invalidnca") {
+            return "FS/Content"
+        }
+        if combined.contains("audio") || combined.contains("openal") || combined.contains("sdl2") || combined.contains("soundio") {
+            return "Audio"
+        }
+        if combined.contains("input") || combined.contains("gamepad") || combined.contains("controller") || combined.contains("hid") {
+            return "Input"
+        }
+
+        return "Unknown"
+    }
+
+    func recordCrashAndSuggestFallback(for config: Arguments, category: String) -> Int {
+        let gameKey = normalizeGameKey(from: config)
+        let levelKey = fallbackKey(for: gameKey)
+        let categoryKey = "fallback.lastCategory.\(gameKey)"
+
+        let current = UserDefaults.standard.integer(forKey: levelKey)
+        let next = min(current + 1, 3)
+
+        UserDefaults.standard.set(next, forKey: levelKey)
+        UserDefaults.standard.set(category, forKey: categoryKey)
+
+        return next
     }
     
     func extractExceptionInfo(_ logs: [String]) -> ExceptionInfo? {

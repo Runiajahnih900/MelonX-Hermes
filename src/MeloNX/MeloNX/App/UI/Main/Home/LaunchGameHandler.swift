@@ -96,7 +96,8 @@ class LaunchGameHandler: ObservableObject {
         persettings.loadSettings()
         
         var config = persettings.config[currentGame.titleId] ?? self.config
-        
+        config = ryujinx.configurationWithAutoFallback(base: config, gameKey: currentGame.titleId)
+
         controllerManager.registerControllerTypeForMatchingControllers()
         config.gamepath = currentGame.fileURL.path
         config.inputids = Array(Set(controllerManager.selectedControllers))
