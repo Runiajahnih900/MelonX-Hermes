@@ -599,9 +599,9 @@ class Ryujinx : ObservableObject {
         
         args.append(contentsOf: ["--device-display-name", UIDevice.modelName])
         
-        // Selalu aktifkan memory entitlement flag pada runtime.
-        // Entitlement key juga sudah tersedia di file entitlements project.
-        args.append("--has-memory-entitlement")
+        if checkAppEntitlement("com.apple.developer.kernel.increased-memory-limit") {
+            args.append("--has-memory-entitlement")
+        }
         
         args.append(contentsOf: ["--system-language", config.language.rawValue])
         
