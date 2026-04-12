@@ -656,8 +656,14 @@ class Ryujinx : ObservableObject {
             args.append(contentsOf: ["--resolution-scale", String(config.resscale)])
         }
         
+        // Expand RAM (8GiB) hanya aman jika entitlement increased-memory-limit benar-benar ada.
+        // Jika tidak ada entitlement, memaksa expand-ram akan berujung "Cannot allocate memory".
         if config.expandRam {
-            args.append(contentsOf: ["--expand-ram", String(config.expandRam)])
+            if checkAppEntitlement("com.apple.developer.kernel.increased-memory-limit") {
+                args.append(contentsOf: ["--expand-ram", String(config.expandRam)])
+            } else {
+                print("[MeloNX] expand-ram skipped: increased-memory-limit entitlement is unavailable at runtime")
+            }
         }
         
         if config.ignoreMissingServices {

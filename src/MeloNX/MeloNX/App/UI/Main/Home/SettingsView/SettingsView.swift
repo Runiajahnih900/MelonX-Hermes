@@ -886,7 +886,7 @@ struct SettingsViewNew: View {
     private var memoryHacksCard: some View {
         SettingsCard {
             VStack(spacing: 4) {
-                SettingsToggle(isOn: config.expandRam, icon: "exclamationmark.bubble", label: "Expand Guest RAM", infoMessage: "Utilizes an alternative memory mode with 8GiB of DRAM to mimic a Switch development model.\n\nThis is only useful for higher-resolution texture packs or 4k resolution mods. Does NOT improve performance.\n\nLeave OFF if unsure.")
+                SettingsToggle(isOn: config.expandRam, icon: "exclamationmark.bubble", label: "Expand Guest RAM", infoMessage: "Utilizes an alternative memory mode with 8GiB of DRAM to mimic a Switch development model.\n\nRequires real increased-memory-limit entitlement at runtime. If entitlement is unavailable, MeloNX will auto-skip this flag to prevent Cannot allocate memory.\n\nLeave OFF if unsure.")
                     .accentColor(.red)
                     .disabled(totalMemory < 5723)
                 Divider()
