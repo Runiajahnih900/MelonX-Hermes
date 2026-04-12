@@ -487,6 +487,7 @@ class Ryujinx : ObservableObject {
         guard let documentsDirectory = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else { return [] }
         
         var romdirs: [URL] = [documentsDirectory.appendingPathComponent("roms")]
+        var scopedRomDirs: [URL] = []
         let romfoldermanager = ROMFolderManager.shared
         romfoldermanager.loadBookmarks()
         
@@ -508,9 +509,16 @@ class Ryujinx : ObservableObject {
                 
                 if url.startAccessingSecurityScopedResource() {
                     romdirs.append(url)
+                    scopedRomDirs.append(url)
                 }
             } catch {
                 print("Failed to resolve bookmark: \(error)")
+            }
+        }
+
+        defer {
+            for scopedDir in scopedRomDirs {
+                scopedDir.stopAccessingSecurityScopedResource()
             }
         }
         
@@ -545,9 +553,6 @@ class Ryujinx : ObservableObject {
                     }
                 }
             }
-            
-            
-            // romsDirectory.stopAccessingSecurityScopedResource()
         }
         
         return games
@@ -567,12 +572,15 @@ class Ryujinx : ObservableObject {
         args.append(contentsOf: ["--memory-manager-mode", config.memoryManagerMode])
         
         args.append(contentsOf: ["--exclusive-fullscreen", String(true)])
-        if self.aspectRatio == .stretched {
+        if config.aspectRatio == .stretched {
             args.append(contentsOf: ["--exclusive-fullscreen-width", "\(Int(UIScreen.main.bounds.width))"])
             args.append(contentsOf: ["--exclusive-fullscreen-height", "\(Int(UIScreen.main.bounds.height))"])
         } else {
             let windowSize = UIApplication.shared.windows.first?.bounds.size ?? UIScreen.main.bounds.size
+            let previousAspectRatio = self.aspectRatio
+            self.aspectRatio = config.aspectRatio
             let target = targetSize(for: windowSize, ryujinx: self)
+            self.aspectRatio = previousAspectRatio
             args.append(contentsOf: ["--exclusive-fullscreen-width", "\(Int(target.width))"])
             args.append(contentsOf: ["--exclusive-fullscreen-height", "\(Int(target.height))"])
         }
@@ -599,11 +607,9 @@ class Ryujinx : ObservableObject {
         
         args.append(contentsOf: ["--system-region", config.regioncode.rawValue])
         
-        Task { @MainActor in
-            self.aspectRatio = config.aspectRatio
-        }
+        self.aspectRatio = config.aspectRatio
         
-        args.append(contentsOf: ["--aspect-ratio", "Stretched"])
+        args.append(contentsOf: ["--aspect-ratio", config.aspectRatio.rawValue])
         
         args.append(contentsOf: ["--system-timezone", TimeZone.current.identifier])
         

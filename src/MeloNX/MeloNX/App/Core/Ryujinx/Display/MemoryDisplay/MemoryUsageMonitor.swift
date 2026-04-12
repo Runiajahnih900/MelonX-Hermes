@@ -13,9 +13,12 @@ class MemoryUsageMonitor: ObservableObject {
     @Published private(set) var memoryUsage: UInt64 = 0
     private var task: Task<Void, Never>?
 
+    private let activePollIntervalNs: UInt64 = 500_000_000   // 500ms
+    private let idlePollIntervalNs: UInt64 = 1_000_000_000   // 1000ms
+
     init() {
-        task = Task {
-            await monitorMemoryUsage()
+        task = Task.detached(priority: .utility) { [weak self] in
+            await self?.monitorMemoryUsage()
         }
     }
 
@@ -25,12 +28,20 @@ class MemoryUsageMonitor: ObservableObject {
 
     private func monitorMemoryUsage() async {
         while !Task.isCancelled {
-            updateMemoryUsage()
-            try? await Task.sleep(nanoseconds: 200_000_000) 
+            let usage = currentMemoryUsage()
+
+            await MainActor.run {
+                if self.memoryUsage != usage {
+                    self.memoryUsage = usage
+                }
+            }
+
+            let sleepNs = usage > 0 ? activePollIntervalNs : idlePollIntervalNs
+            try? await Task.sleep(nanoseconds: sleepNs)
         }
     }
 
-    private func updateMemoryUsage() {
+    nonisolated private func currentMemoryUsage() -> UInt64 {
         var taskInfo = task_vm_info_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.stride) / 4
 
@@ -41,10 +52,9 @@ class MemoryUsageMonitor: ObservableObject {
         }
 
         if result == KERN_SUCCESS {
-            memoryUsage = taskInfo.phys_footprint
+            return taskInfo.phys_footprint
         } else {
-            print("Failed to get memory usage: \(result)")
-            memoryUsage = 0
+            return 0
         }
     }
 

@@ -13,9 +13,12 @@ class FPSMonitor: ObservableObject {
     @Published private(set) var currentFPS: UInt64 = 0
     private var task: Task<Void, Never>?
 
+    private let activePollIntervalNs: UInt64 = 250_000_000 // 250ms
+    private let idlePollIntervalNs: UInt64 = 600_000_000   // 600ms
+
     init() {
-        task = Task {
-            await monitorFPS()
+        task = Task.detached(priority: .utility) { [weak self] in
+            await self?.monitorFPS()
         }
     }
 
@@ -25,10 +28,16 @@ class FPSMonitor: ObservableObject {
 
     private func monitorFPS() async {
         while !Task.isCancelled {
-            let currentfps = UInt64(RyujinxBridge.currentFPS)
-            currentFPS = currentfps
+            let latestFPS = UInt64(RyujinxBridge.currentFPS)
 
-            try? await Task.sleep(nanoseconds: 100_000_000)
+            await MainActor.run {
+                if self.currentFPS != latestFPS {
+                    self.currentFPS = latestFPS
+                }
+            }
+
+            let sleepNs = latestFPS > 0 ? activePollIntervalNs : idlePollIntervalNs
+            try? await Task.sleep(nanoseconds: sleepNs)
         }
     }
 
