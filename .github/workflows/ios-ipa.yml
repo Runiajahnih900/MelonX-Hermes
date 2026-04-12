@@ -27,6 +27,11 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Ensure iOS helper scripts are executable
+        run: |
+          chmod +x distribution/ios/get_dotnet.sh distribution/ios/xc-compile.sh
+          ls -l distribution/ios/get_dotnet.sh distribution/ios/xc-compile.sh
+
       - name: Build Headless dylib (ios-arm64)
         run: |
           dotnet restore src/Ryujinx.Headless.SDL2/Ryujinx.Headless.SDL2.csproj
