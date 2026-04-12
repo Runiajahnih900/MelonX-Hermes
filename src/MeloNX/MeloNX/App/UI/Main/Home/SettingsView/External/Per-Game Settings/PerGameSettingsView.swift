@@ -153,6 +153,9 @@ struct PerGameSettingsView: View {
     
     @State private var selectedView = "Data Management"
     @State private var sidebar = true
+    @State private var fallbackLevel: Int = 0
+    @State private var fallbackStableRuns: Int = 0
+    @State private var fallbackLastCategory: String = "Unknown"
     
     enum PerSettingsCategory: LocalizedStringKey, CaseIterable, Identifiable {
         case graphics = "Graphics"
@@ -256,6 +259,8 @@ struct PerGameSettingsView: View {
                     settingsManager.config[titleId] = Ryujinx.Arguments()
                     settingsManager.debouncedSave()
                 }
+
+                refreshFallbackInfo()
             }
         }
     }
@@ -578,6 +583,56 @@ struct PerGameSettingsView: View {
                 }
             }
             
+            // Fallback debug card
+            SettingsCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        labelWithIcon("Fallback Debug", iconName: "wrench.and.screwdriver")
+                        Spacer()
+                        Text("L\(fallbackLevel)")
+                            .font(.system(.body, design: .monospaced))
+                            .foregroundColor(.secondary)
+                    }
+
+                    Text("Stable runs: \(fallbackStableRuns)/3")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    Text("Last crash category: \(fallbackLastCategory)")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+
+                    Picker("Fallback Level", selection: $fallbackLevel) {
+                        Text("0").tag(0)
+                        Text("1").tag(1)
+                        Text("2").tag(2)
+                        Text("3").tag(3)
+                    }
+                    .pickerStyle(.segmented)
+                    .onChange(of: fallbackLevel) { newValue in
+                        var cfg = settingsManager.config[titleId] ?? Ryujinx.Arguments()
+                        cfg.gamepath = titleId
+                        ryujinx.setFallbackLevel(for: cfg, level: newValue)
+                        fallbackStableRuns = 0
+                    }
+
+                    HStack {
+                        Button("Reset Fallback") {
+                            var cfg = settingsManager.config[titleId] ?? Ryujinx.Arguments()
+                            cfg.gamepath = titleId
+                            ryujinx.clearFallbackInfo(for: cfg)
+                            refreshFallbackInfo()
+                        }
+                        .buttonStyle(.bordered)
+
+                        Button("Refresh") {
+                            refreshFallbackInfo()
+                        }
+                        .buttonStyle(.borderedProminent)
+                    }
+                }
+            }
+
             // Page size info card
             SettingsCard {
                 HStack {
@@ -608,8 +663,17 @@ struct PerGameSettingsView: View {
     }
     
     // MARK: - Helper Functions
-    
-    
+
+    private func refreshFallbackInfo() {
+        var cfg = settingsManager.config[titleId] ?? Ryujinx.Arguments()
+        cfg.gamepath = titleId
+
+        let info = ryujinx.getFallbackInfo(for: cfg)
+        fallbackLevel = info.level
+        fallbackStableRuns = info.successfulRuns
+        fallbackLastCategory = info.lastCategory ?? "Unknown"
+    }
+
     func getGPUInfo() -> String? {
         let device = MTLCreateSystemDefaultDevice()
         return device?.name

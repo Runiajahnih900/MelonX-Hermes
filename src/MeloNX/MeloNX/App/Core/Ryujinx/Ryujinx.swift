@@ -427,6 +427,13 @@ class Ryujinx : ObservableObject {
         UserDefaults.standard.removeObject(forKey: fallbackSuccessKey(for: gameKey))
         UserDefaults.standard.removeObject(forKey: fallbackCategoryKey(for: gameKey))
     }
+
+    func setFallbackLevel(for config: Arguments, level: Int) {
+        let gameKey = normalizeGameKey(from: config)
+        let clampedLevel = max(0, min(level, 3))
+        UserDefaults.standard.set(clampedLevel, forKey: fallbackKey(for: gameKey))
+        UserDefaults.standard.set(0, forKey: fallbackSuccessKey(for: gameKey))
+    }
     
     func extractExceptionInfo(_ logs: [String]) -> ExceptionInfo? {
         for i in (0..<logs.count).reversed() {
