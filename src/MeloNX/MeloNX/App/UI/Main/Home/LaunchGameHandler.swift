@@ -32,7 +32,7 @@ class LaunchGameHandler: ObservableObject {
     }
     
     private var hasJITEntitlement: Bool {
-        ProcessInfo.processInfo.isiOSAppOnMac ? true : checkAppEntitlement(Self.jitEntitlement)
+        ProcessInfo.processInfo.isiOSAppOnMac ? true : hasUsableIncreasedMemoryLimit()
     }
     
     var isGameReady: Bool {

@@ -155,7 +155,7 @@ struct GamesListView: View {
                                 .frame(width: 12, height: 12)
                                 .padding(.horizontal, 8)
                                 .padding(.vertical, 4)
-                                .foregroundColor(checkAppEntitlement("com.apple.developer.kernel.increased-memory-limit") ? Color.green : Color.orange)
+                                .foregroundColor(hasUsableIncreasedMemoryLimit() ? Color.green : Color.orange)
                                 .padding()
                         }
                         Spacer()

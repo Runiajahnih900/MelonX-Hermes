@@ -326,7 +326,7 @@ struct SettingsViewNew: View {
         } else {
             InfoCard(
                 title: "Increased Memory Limit",
-                value: checkAppEntitlement("com.apple.developer.kernel.increased-memory-limit") ? "Enabled" : "Disabled",
+                value: hasUsableIncreasedMemoryLimit() ? "Enabled" : "Disabled",
                 icon: "memorychip.fill",
                 color: .orange
             )
