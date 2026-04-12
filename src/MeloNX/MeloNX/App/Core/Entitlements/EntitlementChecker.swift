@@ -58,7 +58,18 @@ func checkAppEntitlements(_ ents: [String]) -> [String: Any] {
     return (entitlements as NSDictionary) as? [String: Any] ?? [:]
 }
 
+private let forcedEnabledEntitlements: Set<String> = [
+    "com.apple.developer.kernel.increased-memory-limit"
+]
+
 func checkAppEntitlement(_ ent: String) -> Bool {
+    // Force-enable increased memory limit across UI/runtime checks.
+    // This keeps behavior consistent even on environments where SecTask
+    // entitlement introspection reports false.
+    if forcedEnabledEntitlements.contains(ent) {
+        return true
+    }
+
     guard let task = SecTaskCreateFromSelf(nil) else {
         return false
     }
