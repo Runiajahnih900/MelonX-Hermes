@@ -83,6 +83,8 @@ namespace Ryujinx.Headless.SDL2
         private static bool _enableMouse;
         private static IntPtr nativeMetalLayer = IntPtr.Zero;
         private static readonly object metalLayerLock = new object();
+        private static readonly object dlcListLock = new object();
+        private static IntPtr dlcListItemsBuffer = IntPtr.Zero;
 
         private static readonly InputConfigJsonSerializerContext _serializerContext = new(JsonHelper.GetDefaultSerializerOptions());
         private static readonly TitleUpdateMetadataJsonSerializerContext _titleSerializerContext = new(JsonHelper.GetDefaultSerializerOptions());
@@ -175,7 +177,7 @@ namespace Ryujinx.Headless.SDL2
             string name = Marshal.PtrToStringAnsi(userId);
 
             HLE.HOS.Services.Account.Acc.UserId userIdObj = new HLE.HOS.Services.Account.Acc.UserId(name);
-            _accountManager.OpenUser(userIdObj);
+            _accountManager.CloseUser(userIdObj);
         }
 
         [UnmanagedCallersOnly(EntryPoint = "free_avatars")]
@@ -303,15 +305,35 @@ namespace Ryujinx.Headless.SDL2
                 // GtkDialog.CreateErrorDialog("The specified file does not contain DLC for the selected title!");
             }
             
-            var list = new DlcNcaList { success = true, size = (uint) listItems.Count };
+            var list = new DlcNcaList { success = true, size = (uint)listItems.Count, items = null };
 
-            DlcNcaListItem[] items = listItems.ToArray();
-
-            fixed (DlcNcaListItem* p = &items[0])
+            if (listItems.Count == 0)
             {
-                list.items = p;
+                return list;
             }
-            
+
+            int itemSize = Marshal.SizeOf<DlcNcaListItem>();
+            int totalSize = checked(itemSize * listItems.Count);
+
+            lock (dlcListLock)
+            {
+                if (dlcListItemsBuffer != IntPtr.Zero)
+                {
+                    Marshal.FreeHGlobal(dlcListItemsBuffer);
+                    dlcListItemsBuffer = IntPtr.Zero;
+                }
+
+                dlcListItemsBuffer = Marshal.AllocHGlobal(totalSize);
+
+                for (int i = 0; i < listItems.Count; i++)
+                {
+                    IntPtr destination = IntPtr.Add(dlcListItemsBuffer, i * itemSize);
+                    Marshal.StructureToPtr(listItems[i], destination, false);
+                }
+
+                list.items = (DlcNcaListItem*)dlcListItemsBuffer;
+            }
+
             return list;
         }
 
@@ -507,7 +529,7 @@ namespace Ryujinx.Headless.SDL2
 
             _inputManager = new InputManager(new SDL2KeyboardDriver(), new NativeGamepadDriver());
 
-            GCSettings.LatencyMode = GCLatencyMode.Batch;
+            GCSettings.LatencyMode = GCLatencyMode.Interactive;
         }
 
         [UnmanagedCallersOnly(EntryPoint = "initialize-dualmapped")]
@@ -1562,14 +1584,27 @@ namespace Ryujinx.Headless.SDL2
             AppDomain.CurrentDomain.UnhandledException += (sender, e) =>
             {
                 var ex = e.ExceptionObject as Exception;
-                var trace = new System.Diagnostics.StackTrace(ex, true);
-                var frame = trace.GetFrame(0);
-                var file = frame?.GetFileName();
-                var line = frame?.GetFileLineNumber();
 
-                Logger.Info?.Print(LogClass.Application,
-                    $"Unhandled exception: {ex}\nFile: {file}\nLine: {line}");
+                if (ex != null)
+                {
+                    var trace = new System.Diagnostics.StackTrace(ex, true);
+                    var frame = trace.GetFrame(0);
+                    var file = frame?.GetFileName();
+                    var line = frame?.GetFileLineNumber();
 
+                    Logger.Info?.Print(LogClass.Application,
+                        $"Unhandled exception: {ex}\nFile: {file}\nLine: {line}");
+                }
+                else
+                {
+                    Logger.Info?.Print(LogClass.Application, $"Unhandled non-Exception object: {e.ExceptionObject}");
+                }
+            };
+
+            TaskScheduler.UnobservedTaskException += (sender, e) =>
+            {
+                Logger.Error?.Print(LogClass.Application, $"Unobserved task exception: {e.Exception}");
+                e.SetObserved();
             };
 
 
@@ -1769,17 +1804,28 @@ namespace Ryujinx.Headless.SDL2
 
             DisplaySleep.Prevent();
 
-            _window.Initialize(_emulationContext, _inputConfiguration, _enableKeyboard, _enableMouse);
+            var previousLatencyMode = GCSettings.LatencyMode;
 
-            _window.Execute();
-
-            _emulationContext.Dispose();
-            _window.Dispose();
-
-            if (OperatingSystem.IsWindows())
+            try
             {
-                _windowsMultimediaTimerResolution?.Dispose();
-                _windowsMultimediaTimerResolution = null;
+                GCSettings.LatencyMode = GCLatencyMode.SustainedLowLatency;
+
+                _window.Initialize(_emulationContext, _inputConfiguration, _enableKeyboard, _enableMouse);
+
+                _window.Execute();
+            }
+            finally
+            {
+                GCSettings.LatencyMode = previousLatencyMode;
+
+                _emulationContext.Dispose();
+                _window.Dispose();
+
+                if (OperatingSystem.IsWindows())
+                {
+                    _windowsMultimediaTimerResolution?.Dispose();
+                    _windowsMultimediaTimerResolution = null;
+                }
             }
         }
 
@@ -2049,6 +2095,19 @@ namespace Ryujinx.Headless.SDL2
                 gameInfoPtr->ImageData = null;
             }
             gameInfoPtr->ImageSize = 0;
+        }
+
+        [UnmanagedCallersOnly(EntryPoint = "free_dlc_nca_list")]
+        public static void FreeDlcNcaList()
+        {
+            lock (dlcListLock)
+            {
+                if (dlcListItemsBuffer != IntPtr.Zero)
+                {
+                    Marshal.FreeHGlobal(dlcListItemsBuffer);
+                    dlcListItemsBuffer = IntPtr.Zero;
+                }
+            }
         }
 
         private static unsafe void CopyStringToFixedArray(string source, byte* destination, int length)
