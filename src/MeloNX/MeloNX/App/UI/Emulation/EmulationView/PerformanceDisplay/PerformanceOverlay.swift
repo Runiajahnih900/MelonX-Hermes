@@ -48,18 +48,9 @@ struct PerformanceOverlayView: View  {
     }
     
     var body: some View {
-        Group {
-            if #available(iOS 19.0, *), !NativeSettingsManager.shared.disableLiquidGlass.value {
-                GlassEffectContainer {
-                    content
-                        .glassEffect(.clear.tint(.black.opacity(0.6)),in: RoundedRectangle(cornerRadius: 5))
-                }
-            } else {
-                content
-                    .background(Color.black.opacity(0.7))
-            }
-        }
-        .onAppear() {
+        content
+            .background(Color.black.opacity(0.7))
+            .onAppear() {
             UIDevice.current.isBatteryMonitoringEnabled = true
             batteryLevel = Int(UIDevice.current.batteryLevel * 100)
             
