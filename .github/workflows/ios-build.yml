@@ -33,6 +33,7 @@ jobs:
 
       - name: Build MeloNX (unsigned)
         run: |
+          set -o pipefail
           xcodebuild \
             -project src/MeloNX/MeloNX.xcodeproj \
             -scheme MeloNX \
@@ -40,30 +41,35 @@ jobs:
             -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO \
             CODE_SIGNING_REQUIRED=NO \
-            build
+            build | tee xcodebuild.log
 
-      - name: Archive derived data logs
+      - name: Create unsigned IPA
+        if: success()
+        run: |
+          APP_PATH=$(find ~/Library/Developer/Xcode/DerivedData -type d -path "*/Build/Products/Release-iphoneos/*.app" | head -n 1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Release .app not found"
+            exit 1
+          fi
+
+          mkdir -p artifacts/Payload
+          cp -R "$APP_PATH" artifacts/Payload/
+          (cd artifacts && /usr/bin/zip -qry MeloNX-unsigned.ipa Payload)
+
+      - name: Archive build logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: xcode-logs
           path: |
+            xcodebuild.log
             ~/Library/Logs/DiagnosticReports
-            ~/Library/Developer/Xcode/DerivedData
           if-no-files-found: ignore
 
-      - name: Package build outputs
-        if: success()
-        run: |
-          mkdir -p artifacts
-          find ~/Library/Developer/Xcode/DerivedData -type d -name "Build" -maxdepth 6 -print0 | while IFS= read -r -d '' d; do
-            cp -R "$d" "artifacts/" || true
-          done
-
-      - name: Upload build artifacts
+      - name: Upload IPA artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: melonx-ios-build
-          path: artifacts
-          if-no-files-found: warn
+          name: melonx-unsigned-ipa
+          path: artifacts/MeloNX-unsigned.ipa
+          if-no-files-found: error
