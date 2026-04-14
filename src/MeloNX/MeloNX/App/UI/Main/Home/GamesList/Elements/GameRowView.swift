@@ -166,30 +166,18 @@ struct GameRowView: View {
 extension View {
     @ViewBuilder
     func liquidGlass(cornerRadius: CGFloat = 12, interactive: Bool = true, background: @escaping () -> some View) -> some View {
-        if #available(iOS 19, *), !NativeSettingsManager.shared.disableLiquidGlass.value {
-            self.glassEffect(interactive ? .regular.tint(Color(.systemGray6)).interactive() : .regular.tint(Color(.systemGray6)), in: RoundedRectangle(cornerRadius: cornerRadius))
-        } else {
-            self
-                .background(
-                    background()
-                )
-        }
+        self
+            .background(
+                background()
+            )
     }
-    
-    
+
+
     @ViewBuilder
     func liquidGlass(cornerRadius: CGFloat = 12, selectedGame: Binding<Game?>, game: Game, background: @escaping () -> some View) -> some View {
-        if #available(iOS 19, *), !NativeSettingsManager.shared.disableLiquidGlass.value {
-            if selectedGame.wrappedValue != nil, selectedGame.wrappedValue?.id == game.id {
-                self.glassEffect(.regular.tint(.blue.opacity(0.5)).interactive(), in: RoundedRectangle(cornerRadius: cornerRadius))
-            } else {
-                self.glassEffect(.regular.tint(Color(.systemGray6)).interactive(), in: RoundedRectangle(cornerRadius: cornerRadius))
-            }
-        } else {
-             self
-                .background(
-                    background()
-                )
-        }
+        self
+            .background(
+                background()
+            )
     }
 }
