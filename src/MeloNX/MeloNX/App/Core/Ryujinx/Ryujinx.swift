@@ -572,6 +572,38 @@ class Ryujinx : ObservableObject {
         var effectiveMemoryManagerMode = config.memoryManagerMode
         let hasIncreasedMemoryLimitEntitlement = checkAppEntitlement("com.apple.developer.kernel.increased-memory-limit")
 
+        let physicalMemoryBytes = ProcessInfo.processInfo.physicalMemory
+        let oneGiB = Double(1024 * 1024 * 1024)
+        let physicalMemoryGiB = Double(physicalMemoryBytes) / oneGiB
+        let isLowMemoryDevice = !hasIncreasedMemoryLimitEntitlement || physicalMemoryGiB <= 6.0
+        let isVeryLowMemoryDevice = physicalMemoryGiB <= 4.5
+
+        var effectiveEnableDockedMode = config.enableDockedMode
+        var effectiveResScale = config.resscale
+        var effectiveMaxAnisotropy = config.maxAnisotropy
+        var effectiveEnableShaderCache = config.enableShaderCache
+        var effectiveEnableTextureRecompression = config.enableTextureRecompression
+        var effectiveExpandRam = config.expandRam
+
+        if isLowMemoryDevice {
+            let originalResScale = effectiveResScale
+            let originalAnisotropy = effectiveMaxAnisotropy
+
+            effectiveEnableDockedMode = false
+            effectiveResScale = min(effectiveResScale, 0.75)
+            effectiveMaxAnisotropy = min(effectiveMaxAnisotropy, 2.0)
+            effectiveEnableTextureRecompression = true
+
+            if originalResScale != effectiveResScale || originalAnisotropy != effectiveMaxAnisotropy || config.enableDockedMode {
+                print("[MeloNX] low-memory guard active (RAM: \(String(format: "%.2f", physicalMemoryGiB)) GiB, entitlement: \(hasIncreasedMemoryLimitEntitlement))")
+            }
+        }
+
+        if isVeryLowMemoryDevice, effectiveEnableShaderCache {
+            print("[MeloNX] low-memory guard: disabling shader cache on very low memory device (\(String(format: "%.2f", physicalMemoryGiB)) GiB)")
+            effectiveEnableShaderCache = false
+        }
+
         // Pada iOS tanpa increased-memory-limit entitlement, mode non-SoftwarePageTable
         // sangat rentan gagal alokasi memori. Paksa SoftwarePageTable agar game bisa boot.
         let normalizedMemoryMode = effectiveMemoryManagerMode
@@ -581,6 +613,15 @@ class Ryujinx : ObservableObject {
         if !hasIncreasedMemoryLimitEntitlement, normalizedMemoryMode != "softwarepagetable" {
             print("[MeloNX] memory-manager-mode forced fallback: \(effectiveMemoryManagerMode) -> SoftwarePageTable (no increased-memory-limit entitlement)")
             effectiveMemoryManagerMode = "SoftwarePageTable"
+        } else if physicalMemoryGiB <= 6.0, normalizedMemoryMode == "hostmappedunsafe" {
+            // Unsafe mode dapat meningkatkan pressure pada perangkat RAM kecil.
+            print("[MeloNX] memory-manager-mode adjusted for low RAM: HostMappedUnsafe -> HostMapped")
+            effectiveMemoryManagerMode = "HostMapped"
+        }
+
+        if effectiveExpandRam, (!hasIncreasedMemoryLimitEntitlement || physicalMemoryGiB < 8.0) {
+            print("[MeloNX] expand-ram auto-disabled for compatibility (RAM: \(String(format: "%.2f", physicalMemoryGiB)) GiB, entitlement: \(hasIncreasedMemoryLimitEntitlement))")
+            effectiveExpandRam = false
         }
 
         args.append(contentsOf: ["--memory-manager-mode", effectiveMemoryManagerMode])
@@ -667,43 +708,38 @@ class Ryujinx : ObservableObject {
         
         // ldn
         
-        if config.resscale != 1.0 {
-            args.append(contentsOf: ["--resolution-scale", String(config.resscale)])
+        if effectiveResScale != 1.0 {
+            args.append(contentsOf: ["--resolution-scale", String(effectiveResScale)])
         }
         
         // Expand RAM (8GiB) hanya aman jika entitlement increased-memory-limit benar-benar ada.
         // Jika tidak ada entitlement, memaksa expand-ram akan berujung "Cannot allocate memory".
-        if config.expandRam {
-            if checkAppEntitlement("com.apple.developer.kernel.increased-memory-limit") {
-                args.append(contentsOf: ["--expand-ram", String(config.expandRam)])
-            } else {
-                print("[MeloNX] expand-ram skipped: increased-memory-limit entitlement is unavailable at runtime")
-            }
+        if effectiveExpandRam {
+            args.append(contentsOf: ["--expand-ram", String(effectiveExpandRam)])
         }
         
         if config.ignoreMissingServices {
-            // args.append(contentsOf: ["--ignore-missing-services"])
             args.append("--ignore-missing-services")
         }
         
-        if config.maxAnisotropy != 0 {
-            args.append(contentsOf: ["--max-anisotropy", String(config.maxAnisotropy)])
+        if effectiveMaxAnisotropy != 0 {
+            args.append(contentsOf: ["--max-anisotropy", String(effectiveMaxAnisotropy)])
         }
         
         if !config.macroHLE {
             args.append("--disable-macro-hle")
         }
         
-        // Finally fixed these by replacing disable with enable.
-        if !config.enableShaderCache {
+        if !effectiveEnableShaderCache {
             args.append("--disable-shader-cache")
         }
         
-        if !config.enableDockedMode {
+        if !effectiveEnableDockedMode {
             args.append("--disable-docked-mode")
         }
-        if config.enableTextureRecompression {
-            // args.append("--enable-texture-recompression")
+
+        if effectiveEnableTextureRecompression {
+            args.append("--enable-texture-recompression")
         }
         
         if config.debuglogs {
