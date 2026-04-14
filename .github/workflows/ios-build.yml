@@ -28,8 +28,8 @@ jobs:
 
       - name: Build Ryujinx.Headless.SDL2 dylib
         run: |
-          chmod +x distribution/ios/xc-compile.sh
-          ./distribution/ios/xc-compile.sh
+          chmod +x distribution/ios/get_dotnet.sh distribution/ios/xc-compile.sh
+          bash distribution/ios/xc-compile.sh
 
       - name: Build MeloNX (unsigned)
         run: |
