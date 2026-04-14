@@ -1617,6 +1617,13 @@ namespace Ryujinx.Headless.SDL2
             GraphicsConfig.EnableMacroHLE = !option.DisableMacroHLE;
             GraphicsConfig.EnableColorSpacePassthrough = true;
 
+            // Engine-level memory profile (independent from UI settings).
+            // Digunakan untuk menurunkan budget cache internal pada device iOS low-memory.
+            GraphicsConfig.HasMemoryEntitlement = option.MemoryEnt;
+            long totalAvailableMemoryBytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
+            bool lowMemoryByRuntime = totalAvailableMemoryBytes > 0 && totalAvailableMemoryBytes <= (6L * 1024 * 1024 * 1024);
+            GraphicsConfig.IsLowMemoryDevice = OperatingSystem.IsIOS() && (!option.MemoryEnt || lowMemoryByRuntime);
+
             DriverUtilities.InitDriverConfig(option.BackendThreading == BackendThreading.Off);
             _virtualFileSystem.ReloadKeySet();
             while (true)
@@ -2157,6 +2164,10 @@ namespace Ryujinx.Headless.SDL2
             GraphicsConfig.EnableShaderCache = !options.DisableShaderCache;
             GraphicsConfig.EnableTextureRecompression = options.EnableTextureRecompression;
             GraphicsConfig.EnableMacroHLE = !options.DisableMacroHLE;
+            GraphicsConfig.HasMemoryEntitlement = options.MemoryEnt;
+            long totalAvailableMemoryBytes = GC.GetGCMemoryInfo().TotalAvailableMemoryBytes;
+            bool lowMemoryByRuntime = totalAvailableMemoryBytes > 0 && totalAvailableMemoryBytes <= (6L * 1024 * 1024 * 1024);
+            GraphicsConfig.IsLowMemoryDevice = OperatingSystem.IsIOS() && (!options.MemoryEnt || lowMemoryByRuntime);
 
             if (_emulationContext != null)
             {

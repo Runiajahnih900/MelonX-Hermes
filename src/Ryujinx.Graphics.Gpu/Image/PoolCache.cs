@@ -32,7 +32,9 @@ namespace Ryujinx.Graphics.Gpu.Image
     abstract class PoolCache<T> : IDisposable where T : IPool<T>, IDisposable
     {
         private const int MaxCapacity = 2;
+        private const int LowMemoryMaxCapacity = 1;
         private const ulong MinDeltaForRemoval = 20000;
+        private const ulong LowMemoryMinDeltaForRemoval = 4000;
 
         private readonly GpuContext _context;
         private readonly LinkedList<T> _pools;
@@ -66,8 +68,11 @@ namespace Ryujinx.Graphics.Gpu.Image
         /// <returns>The found or newly created texture pool</returns>
         public T FindOrCreate(GpuChannel channel, ulong address, int maximumId, TextureBindingsArrayCache bindingsArrayCache)
         {
+            int maxCapacity = GraphicsConfig.IsLowMemoryDevice ? LowMemoryMaxCapacity : MaxCapacity;
+            ulong minDeltaForRemoval = GraphicsConfig.IsLowMemoryDevice ? LowMemoryMinDeltaForRemoval : MinDeltaForRemoval;
+
             // Remove old entries from the cache, if possible.
-            while (_pools.Count > MaxCapacity && (_currentTimestamp - _pools.First.Value.CacheTimestamp) >= MinDeltaForRemoval)
+            while (_pools.Count > maxCapacity && (_currentTimestamp - _pools.First.Value.CacheTimestamp) >= minDeltaForRemoval)
             {
                 T oldestPool = _pools.First.Value;
 

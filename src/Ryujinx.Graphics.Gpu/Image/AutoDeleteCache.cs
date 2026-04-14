@@ -47,11 +47,14 @@ namespace Ryujinx.Graphics.Gpu.Image
     {
         private const int MinCountForDeletion = 32;
         private const int MaxCapacity = 2048;
+        private const int LowMemoryMaxCapacity = 1024;
         private const ulong MinTextureSizeCapacity = 512 * 1024 * 1024;
         private const ulong MaxTextureSizeCapacity = 4UL * 1024 * 1024 * 1024;
         private const ulong DefaultTextureSizeCapacity = 1UL * 1024 * 1024 * 1024;
         private const float MemoryScaleFactor = 0.50f;
+        private const float LowMemoryScaleFactor = 0.30f;
         private ulong _maxCacheMemoryUsage = 0;
+        private int _maxCapacity = MaxCapacity;
 
         private readonly LinkedList<Texture> _textures;
         private ulong _totalSize;
@@ -70,13 +73,18 @@ namespace Ryujinx.Graphics.Gpu.Image
         /// <param name="context">The GPU context that the cache belongs to</param>
         public void Initialize(GpuContext context)
         {
-            var cacheMemory = (ulong)(context.Capabilities.MaximumGpuMemory * MemoryScaleFactor);
+            bool lowMemoryProfile = GraphicsConfig.IsLowMemoryDevice;
+            float memoryScale = lowMemoryProfile ? LowMemoryScaleFactor : MemoryScaleFactor;
+            var cacheMemory = (ulong)(context.Capabilities.MaximumGpuMemory * memoryScale);
 
             _maxCacheMemoryUsage = Math.Clamp(cacheMemory, MinTextureSizeCapacity, MaxTextureSizeCapacity);
+            _maxCapacity = lowMemoryProfile ? LowMemoryMaxCapacity : MaxCapacity;
 
             if (context.Capabilities.MaximumGpuMemory == 0)
             {
-                _maxCacheMemoryUsage = DefaultTextureSizeCapacity;
+                _maxCacheMemoryUsage = lowMemoryProfile
+                    ? DefaultTextureSizeCapacity / 2
+                    : DefaultTextureSizeCapacity;
             }
         }
 
@@ -108,8 +116,8 @@ namespace Ryujinx.Graphics.Gpu.Image
             texture.IncrementReferenceCount();
             texture.CacheNode = _textures.AddLast(texture);
 
-            if (_textures.Count > MaxCapacity ||
-                (_totalSize > _maxCacheMemoryUsage && _textures.Count >= MinCountForDeletion))
+            while (_textures.Count > _maxCapacity ||
+                   (_totalSize > _maxCacheMemoryUsage && _textures.Count >= MinCountForDeletion))
             {
                 RemoveLeastUsedTexture();
             }

@@ -72,6 +72,16 @@ namespace Ryujinx.Graphics.Gpu
         /// Enables or disables color space passthrough, if available.
         /// </summary>
         public static bool EnableColorSpacePassthrough = true;
+
+        /// <summary>
+        /// Indicates if the host should use a low-memory profile for GPU caches.
+        /// </summary>
+        public static bool IsLowMemoryDevice;
+
+        /// <summary>
+        /// Indicates if increased-memory-limit entitlement is available at runtime on iOS.
+        /// </summary>
+        public static bool HasMemoryEntitlement;
     }
 #pragma warning restore CA2211
 }
